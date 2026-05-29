@@ -342,7 +342,7 @@ app.post('/api/recordatorio/:id', async (req, res) => {
   if (!m) return res.status(404).json({ error: 'No encontrado' });
   if (m.pagado) return res.status(400).json({ error: 'Ya pagó' });
   const linkPago = BASE_URL + '/pagar/' + m.token;
-  const mensaje = '⚽ *¡Hola ' + m.nombre + '!*\n\nTe recordamos que tenés pendiente la cuota social del equipo por *$' + CUOTA_ARS.toLocaleString('es-AR') + ' ARS*.\n\n📎 Hacé tu pago y subí el comprobante en este link:\n' + linkPago + '\n\n¡Gracias y a seguir jugando! 🏆';
+  const mensaje = '⚽ *¡Hola ' + m.nombre + '!*\n\nTe recordamos que tenés pendiente la cuota social del equipo por *$' + CUOTA_ARS.toLocaleString('es-AR') + ' ARS*.\n\n💳 *Datos para transferir:*\nAlias: *abogadosbv.mp*\nA nombre de: Agustin "Mafiolo" Romano\n\n📎 Una vez pagado, subí el comprobante acá:\n' + linkPago + '\n\n¡Gracias y a seguir jugando! 🏆';
   try {
     await client.messages.create({ from: TWILIO_FROM, to: 'whatsapp:+' + m.telefono, body: mensaje });
     res.json({ ok: true });
@@ -359,7 +359,7 @@ app.post('/api/recordatorio-masivo', async (req, res) => {
   const resultados = [];
   for (const m of deudores) {
     const linkPago = BASE_URL + '/pagar/' + m.token;
-    const mensaje = '⚽ *¡Hola ' + m.nombre + '!*\n\nTe recordamos que tenés pendiente la cuota social del equipo por *$' + CUOTA_ARS.toLocaleString('es-AR') + ' ARS*.\n\n📎 Subí tu comprobante acá:\n' + linkPago + '\n\n¡Gracias! 🏆';
+    const mensaje = '⚽ *¡Hola ' + m.nombre + '!*\n\nTe recordamos que tenés pendiente la cuota social del equipo por *$' + CUOTA_ARS.toLocaleString('es-AR') + ' ARS*.\n\n💳 *Datos para transferir:*\nAlias: *abogadosbv.mp*\nA nombre de: Agustin "Mafiolo" Romano\n\n📎 Una vez pagado, subí el comprobante acá:\n' + linkPago + '\n\n¡Gracias! 🏆';
     try {
       await client.messages.create({ from: TWILIO_FROM, to: 'whatsapp:+' + m.telefono, body: mensaje });
       resultados.push({ id: m.id, nombre: m.nombre, ok: true });
