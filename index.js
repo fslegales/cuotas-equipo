@@ -5,6 +5,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
@@ -18,21 +19,25 @@ const CUOTA_ARS    = parseInt(process.env.CUOTA_ARS || '15000');
 
 const client = twilio(TWILIO_SID, TWILIO_TOKEN);
 
-let miembros = [];
-let nextId = 1;
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
-function guardarEstado() {
-  fs.writeFileSync(path.join(__dirname, 'estado.json'), JSON.stringify({ miembros, nextId }, null, 2));
-}
-
-function cargarEstado() {
-  try {
-    const raw = fs.readFileSync(path.join(__dirname, 'estado.json'), 'utf8');
-    const data = JSON.parse(raw);
-    miembros = data.miembros || [];
-    nextId   = data.nextId   || 1;
-    console.log('Estado cargado: ' + miembros.length + ' miembros');
-  } catch { console.log('Sin estado previo'); }
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS miembros (
+      id SERIAL PRIMARY KEY,
+      nombre TEXT NOT NULL,
+      posicion TEXT,
+      telefono TEXT NOT NULL,
+      pagado BOOLEAN DEFAULT false,
+      token TEXT UNIQUE,
+      comprobante_url TEXT,
+      pagado_en TIMESTAMP
+    )
+  `);
+  console.log('Base de datos lista');
 }
 
 const storage = multer.diskStorage({
@@ -50,7 +55,6 @@ const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Panel del tesorero
 app.get('/', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="es">
@@ -253,13 +257,13 @@ async function enviarMasivo(){
 }
 async function verComprobante(id){
   const m=miembros.find(x=>x.id===id);
-  if(!m||!m.comprobanteUrl){toast('Sin comprobante');return;}
+  if(!m||!m.comprobante_url){toast('Sin comprobante');return;}
   document.getElementById('modal-title').textContent='Comprobante — '+m.nombre;
   const content=document.getElementById('modal-content');
-  if(m.comprobanteUrl.endsWith('.pdf')){
-    content.innerHTML='<a href="'+m.comprobanteUrl+'" target="_blank" class="btn btn-primary" style="display:inline-flex">📄 Abrir PDF</a>';
+  if(m.comprobante_url.endsWith('.pdf')){
+    content.innerHTML='<a href="'+m.comprobante_url+'" target="_blank" class="btn btn-primary" style="display:inline-flex">📄 Abrir PDF</a>';
   }else{
-    content.innerHTML='<img src="'+m.comprobanteUrl+'" alt="Comprobante"><p style="font-size:11px;color:#aaa;margin-top:8px;text-align:center">Pagado: '+(m.pagadoEn?new Date(m.pagadoEn).toLocaleString('es-AR'):'—')+'</p>';
+    content.innerHTML='<img src="'+m.comprobante_url+'" alt="Comprobante"><p style="font-size:11px;color:#aaa;margin-top:8px;text-align:center">Pagado: '+(m.pagado_en?new Date(m.pagado_en).toLocaleString('es-AR'):'—')+'</p>';
   }
   document.getElementById('modal').classList.add('open');
 }
@@ -285,10 +289,10 @@ function render(){
   lista.innerHTML=vis.map(m=>'<div class="member '+(m.pagado?'pago':'deuda')+'">'
     +'<div class="avatar '+(m.pagado?'av-ok':'av-bad')+'">'+initials(m.nombre)+'</div>'
     +'<div class="info"><div class="name">'+m.nombre+'</div>'
-    +'<div class="meta">'+m.posicion+(!m.pagado?' · $'+cuota.toLocaleString('es-AR')+usdStr(m):'')+( m.pagadoEn?' · Pagó '+new Date(m.pagadoEn).toLocaleDateString('es-AR'):'')+' · Tel: '+m.telefono+'</div></div>'
+    +'<div class="meta">'+m.posicion+(!m.pagado?' · $'+cuota.toLocaleString('es-AR')+usdStr(m):'')+( m.pagado_en?' · Pagó '+new Date(m.pagado_en).toLocaleDateString('es-AR'):'')+' · Tel: '+m.telefono+'</div></div>'
     +'<span class="badge '+(m.pagado?'badge-ok':'badge-bad')+'">'+(m.pagado?'Al día':'Debe')+'</span>'
     +'<div class="actions">'
-    +(m.comprobanteUrl?'<button class="icon-btn" onclick="verComprobante('+m.id+')" title="Ver comprobante">📎</button>':'')
+    +(m.comprobante_url?'<button class="icon-btn" onclick="verComprobante('+m.id+')" title="Ver comprobante">📎</button>':'')
     +(!m.pagado?'<button class="icon-btn" onclick="enviarRecordatorio('+m.id+')" title="Mandar recordatorio">📲</button>':'')
     +'<button class="icon-btn" onclick="togglePago('+m.id+')" title="'+(m.pagado?'Marcar deudor':'Marcar pagado')+'">'+(m.pagado?'↩':'✓')+'</button>'
     +'<button class="icon-btn" onclick="eliminar('+m.id+')" title="Eliminar">🗑</button>'
@@ -302,61 +306,78 @@ fetchDolar();cargarMiembros();setInterval(cargarMiembros,30000);
 </html>`);
 });
 
-app.get('/api/miembros',(req,res)=>res.json(miembros));
-
-app.post('/api/miembros',(req,res)=>{
-  const{nombre,posicion,telefono}=req.body;
-  if(!nombre||!telefono)return res.status(400).json({error:'Faltan datos'});
-  const token=crypto.randomBytes(16).toString('hex');
-  const m={id:nextId++,nombre,posicion:posicion||'Sin especificar',telefono:telefono.replace(/\D/g,''),pagado:false,token,comprobanteUrl:null,pagadoEn:null};
-  miembros.push(m);guardarEstado();res.json(m);
+app.get('/api/miembros', async (req, res) => {
+  const result = await pool.query('SELECT * FROM miembros ORDER BY id');
+  res.json(result.rows);
 });
 
-app.delete('/api/miembros/:id',(req,res)=>{
-  miembros=miembros.filter(m=>m.id!==parseInt(req.params.id));
-  guardarEstado();res.json({ok:true});
+app.post('/api/miembros', async (req, res) => {
+  const { nombre, posicion, telefono } = req.body;
+  if (!nombre || !telefono) return res.status(400).json({ error: 'Faltan datos' });
+  const token = crypto.randomBytes(16).toString('hex');
+  const result = await pool.query(
+    'INSERT INTO miembros (nombre, posicion, telefono, token) VALUES ($1, $2, $3, $4) RETURNING *',
+    [nombre, posicion || 'Sin especificar', telefono.replace(/\D/g, ''), token]
+  );
+  res.json(result.rows[0]);
 });
 
-app.patch('/api/miembros/:id/pago',(req,res)=>{
-  const m=miembros.find(x=>x.id===parseInt(req.params.id));
-  if(!m)return res.status(404).json({error:'No encontrado'});
-  m.pagado=req.body.pagado;
-  if(m.pagado)m.pagadoEn=new Date().toISOString();
-  guardarEstado();res.json(m);
+app.delete('/api/miembros/:id', async (req, res) => {
+  await pool.query('DELETE FROM miembros WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
 });
 
-app.post('/api/recordatorio/:id',async(req,res)=>{
-  const m=miembros.find(x=>x.id===parseInt(req.params.id));
-  if(!m)return res.status(404).json({error:'No encontrado'});
-  if(m.pagado)return res.status(400).json({error:'Ya pagó'});
-  const linkPago=BASE_URL+'/pagar/'+m.token;
-  const mensaje='⚽ *¡Hola '+m.nombre+'!*\n\nTe recordamos que tenés pendiente la cuota social del equipo por *$'+CUOTA_ARS.toLocaleString('es-AR')+' ARS*.\n\n📎 Hacé tu pago y subí el comprobante en este link:\n'+linkPago+'\n\n¡Gracias y a seguir jugando! 🏆';
-  try{
-    await client.messages.create({from:TWILIO_FROM,to:'whatsapp:+'+m.telefono,body:mensaje});
-    res.json({ok:true});
-  }catch(err){res.status(500).json({error:err.message});}
+app.patch('/api/miembros/:id/pago', async (req, res) => {
+  const { pagado } = req.body;
+  const result = await pool.query(
+    'UPDATE miembros SET pagado=$1, pagado_en=$2 WHERE id=$3 RETURNING *',
+    [pagado, pagado ? new Date() : null, req.params.id]
+  );
+  res.json(result.rows[0]);
 });
 
-app.post('/api/recordatorio-masivo',async(req,res)=>{
-  const deudores=miembros.filter(m=>!m.pagado);
-  if(!deudores.length)return res.json({ok:true,enviados:0});
-  const resultados=[];
-  for(const m of deudores){
-    const linkPago=BASE_URL+'/pagar/'+m.token;
-    const mensaje='⚽ *¡Hola '+m.nombre+'!*\n\nTe recordamos que tenés pendiente la cuota social del equipo por *$'+CUOTA_ARS.toLocaleString('es-AR')+' ARS*.\n\n📎 Subí tu comprobante acá:\n'+linkPago+'\n\n¡Gracias! 🏆';
-    try{
-      await client.messages.create({from:TWILIO_FROM,to:'whatsapp:+'+m.telefono,body:mensaje});
-      resultados.push({id:m.id,nombre:m.nombre,ok:true});
-    }catch(err){resultados.push({id:m.id,nombre:m.nombre,ok:false,error:err.message});}
-    await new Promise(r=>setTimeout(r,300));
+app.post('/api/recordatorio/:id', async (req, res) => {
+  const result = await pool.query('SELECT * FROM miembros WHERE id=$1', [req.params.id]);
+  const m = result.rows[0];
+  if (!m) return res.status(404).json({ error: 'No encontrado' });
+  if (m.pagado) return res.status(400).json({ error: 'Ya pagó' });
+  const linkPago = BASE_URL + '/pagar/' + m.token;
+  const mensaje = '⚽ *¡Hola ' + m.nombre + '!*\n\nTe recordamos que tenés pendiente la cuota social del equipo por *$' + CUOTA_ARS.toLocaleString('es-AR') + ' ARS*.\n\n📎 Hacé tu pago y subí el comprobante en este link:\n' + linkPago + '\n\n¡Gracias y a seguir jugando! 🏆';
+  try {
+    await client.messages.create({ from: TWILIO_FROM, to: 'whatsapp:+' + m.telefono, body: mensaje });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error Twilio:', err.message);
+    res.status(500).json({ error: err.message });
   }
-  res.json({ok:true,enviados:resultados.filter(r=>r.ok).length,resultados});
 });
 
-app.get('/pagar/:token',(req,res)=>{
-  const m=miembros.find(x=>x.token===req.params.token);
-  if(!m)return res.status(404).send('<h2>Link inválido o expirado</h2>');
-  if(m.pagado)return res.send('<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;max-width:400px;margin:60px auto;text-align:center;padding:20px}</style></head><body><div style="font-size:60px">✅</div><div style="font-size:20px;margin:16px 0;color:#2d7a2d">¡'+m.nombre+', tu cuota ya está registrada!</div><p style="color:#666">Gracias por pagar a tiempo 🏆</p></body></html>');
+app.post('/api/recordatorio-masivo', async (req, res) => {
+  const result = await pool.query('SELECT * FROM miembros WHERE pagado=false');
+  const deudores = result.rows;
+  if (!deudores.length) return res.json({ ok: true, enviados: 0 });
+  const resultados = [];
+  for (const m of deudores) {
+    const linkPago = BASE_URL + '/pagar/' + m.token;
+    const mensaje = '⚽ *¡Hola ' + m.nombre + '!*\n\nTe recordamos que tenés pendiente la cuota social del equipo por *$' + CUOTA_ARS.toLocaleString('es-AR') + ' ARS*.\n\n📎 Subí tu comprobante acá:\n' + linkPago + '\n\n¡Gracias! 🏆';
+    try {
+      await client.messages.create({ from: TWILIO_FROM, to: 'whatsapp:+' + m.telefono, body: mensaje });
+      resultados.push({ id: m.id, nombre: m.nombre, ok: true });
+      console.log('Mensaje enviado a ' + m.nombre + ' (' + m.telefono + ')');
+    } catch (err) {
+      console.error('Error enviando a ' + m.nombre + ':', err.message);
+      resultados.push({ id: m.id, nombre: m.nombre, ok: false, error: err.message });
+    }
+    await new Promise(r => setTimeout(r, 300));
+  }
+  res.json({ ok: true, enviados: resultados.filter(r => r.ok).length, resultados });
+});
+
+app.get('/pagar/:token', async (req, res) => {
+  const result = await pool.query('SELECT * FROM miembros WHERE token=$1', [req.params.token]);
+  const m = result.rows[0];
+  if (!m) return res.status(404).send('<h2>Link inválido o expirado</h2>');
+  if (m.pagado) return res.send('<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;max-width:400px;margin:60px auto;text-align:center;padding:20px}</style></head><body><div style="font-size:60px">✅</div><div style="font-size:20px;margin:16px 0;color:#2d7a2d">¡' + m.nombre + ', tu cuota ya está registrada!</div><p style="color:#666">Gracias por pagar a tiempo 🏆</p></body></html>');
   res.send(`<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Subir comprobante</title>
@@ -449,21 +470,27 @@ async function enviar(){
 </script></body></html>`);
 });
 
-app.post('/api/comprobante/:token',upload.single('comprobante'),async(req,res)=>{
-  const m=miembros.find(x=>x.token===req.params.token);
-  if(!m)return res.status(404).json({error:'Token inválido'});
-  if(m.pagado)return res.status(400).json({error:'Ya registrado'});
-  if(!req.file)return res.status(400).json({error:'Sin archivo'});
-  m.pagado=true;
-  m.comprobanteUrl=BASE_URL+'/uploads/'+req.file.filename;
-  m.pagadoEn=new Date().toISOString();
-  guardarEstado();
-  const mensajeFeliz='🎉 *¡Gracias '+m.nombre+'!*\n\nRecibimos tu comprobante y tu cuota quedó registrada. ¡Sos un crack! ⚽🏆\n\nNos vemos en la cancha 💪';
-  try{await client.messages.create({from:TWILIO_FROM,to:'whatsapp:+'+m.telefono,body:mensajeFeliz});}
-  catch(err){console.error('Error felicitación:',err.message);}
-  res.json({ok:true,comprobanteUrl:m.comprobanteUrl});
+app.post('/api/comprobante/:token', upload.single('comprobante'), async (req, res) => {
+  const result = await pool.query('SELECT * FROM miembros WHERE token=$1', [req.params.token]);
+  const m = result.rows[0];
+  if (!m) return res.status(404).json({ error: 'Token inválido' });
+  if (m.pagado) return res.status(400).json({ error: 'Ya registrado' });
+  if (!req.file) return res.status(400).json({ error: 'Sin archivo' });
+  const comprobanteUrl = BASE_URL + '/uploads/' + req.file.filename;
+  await pool.query(
+    'UPDATE miembros SET pagado=true, comprobante_url=$1, pagado_en=$2 WHERE token=$3',
+    [comprobanteUrl, new Date(), req.params.token]
+  );
+  const mensajeFeliz = '🎉 *¡Gracias ' + m.nombre + '!*\n\nRecibimos tu comprobante y tu cuota quedó registrada. ¡Sos un crack! ⚽🏆\n\nNos vemos en la cancha 💪';
+  try {
+    await client.messages.create({ from: TWILIO_FROM, to: 'whatsapp:+' + m.telefono, body: mensajeFeliz });
+  } catch (err) {
+    console.error('Error felicitación:', err.message);
+  }
+  res.json({ ok: true, comprobanteUrl });
 });
 
-const PORT=process.env.PORT||3000;
-cargarEstado();
-app.listen(PORT,()=>console.log('Servidor en puerto '+PORT));
+const PORT = process.env.PORT || 3000;
+initDB().then(() => {
+  app.listen(PORT, () => console.log('Servidor en puerto ' + PORT));
+});
