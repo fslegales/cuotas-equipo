@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cuotas del equipo</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f4f6;min-height:100vh;padding:20px}
+    .container{max-width:720px;margin:0 auto}
+    h1{font-size:22px;font-weight:600;color:#1a1a1a;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+    .subtitle{font-size:13px;color:#888;margin-bottom:20px}
+
+    /* Dólar bar */
+    .dolar-bar{background:#fff;border-radius:10px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;flex-wrap:wrap;border:1px solid #eee}
+    .dolar-val{font-weight:600;color:#1a1a1a}
+    .dolar-tag{background:#e8f5e9;color:#2e7d32;border-radius:99px;padding:2px 10px;font-size:11px;font-weight:600}
+    .dolar-tag.err{background:#fce4ec;color:#c62828}
+
+    /* Stats */
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+    .stat{background:#fff;border-radius:10px;padding:14px;text-align:center;border:1px solid #eee}
+    .stat-n{font-size:26px;font-weight:700}
+    .stat-l{font-size:12px;color:#888;margin-top:2px}
+    .n-ok{color:#2e7d32} .n-bad{color:#c62828}
+
+    /* Config cuota */
+    .config-bar{background:#fff;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid #eee}
+    .config-bar label{font-size:13px;color:#666}
+    .config-bar input{width:120px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+
+    /* Formulario agregar */
+    .add-card{background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid #eee}
+    .add-card h2{font-size:14px;font-weight:600;color:#444;margin-bottom:12px}
+    .add-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end}
+    @media(max-width:600px){.add-grid{grid-template-columns:1fr 1fr}}
+    .add-grid input{padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:14px;width:100%}
+    .add-grid input:focus{outline:none;border-color:#4a90e2;box-shadow:0 0 0 3px rgba(74,144,226,.1)}
+    .btn{padding:8px 16px;border:1px solid #ddd;border-radius:8px;background:#fff;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:background .15s}
+    .btn:hover{background:#f5f5f5}
+    .btn-primary{background:#2e7d32;color:#fff;border-color:#2e7d32}
+    .btn-primary:hover{background:#256428}
+    .btn-danger{background:#c62828;color:#fff;border-color:#c62828}
+    .btn-danger:hover{background:#ad1f1f}
+    .btn-wa{background:#25d366;color:#fff;border-color:#25d366}
+    .btn-wa:hover{background:#1ebe59}
+
+    /* Filtros */
+    .filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+    .filter-btn{padding:6px 14px;border:1px solid #ddd;border-radius:99px;background:#fff;font-size:13px;cursor:pointer;color:#666}
+    .filter-btn.active{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+
+    /* Acciones masivas */
+    .bulk-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+
+    /* Lista */
+    .list{display:flex;flex-direction:column;gap:8px}
+    .member{background:#fff;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;border:1px solid #eee;border-left:4px solid #eee}
+    .member.deuda{border-left-color:#e53935}
+    .member.pago{border-left-color:#43a047}
+    .avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0}
+    .av-ok{background:#e8f5e9;color:#2e7d32}
+    .av-bad{background:#fce4ec;color:#c62828}
+    .info{flex:1;min-width:0}
+    .name{font-size:14px;font-weight:600;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .meta{font-size:12px;color:#888;margin-top:2px}
+    .badge{font-size:11px;padding:3px 8px;border-radius:99px;font-weight:600;flex-shrink:0}
+    .badge-ok{background:#e8f5e9;color:#2e7d32}
+    .badge-bad{background:#fce4ec;color:#c62828}
+    .actions{display:flex;gap:6px;flex-shrink:0}
+    .icon-btn{width:32px;height:32px;border:1px solid #eee;border-radius:8px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:background .15s}
+    .icon-btn:hover{background:#f5f5f5}
+    .empty{text-align:center;padding:40px 20px;color:#aaa;font-size:14px}
+
+    /* Modal comprobante */
+    .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;padding:20px}
+    .modal-bg.open{display:flex}
+    .modal{background:#fff;border-radius:16px;padding:24px;max-width:480px;width:100%;max-height:90vh;overflow-y:auto}
+    .modal h2{font-size:16px;font-weight:600;margin-bottom:16px}
+    .modal img{width:100%;border-radius:8px;border:1px solid #eee}
+    .modal-close{float:right;cursor:pointer;font-size:20px;color:#888;line-height:1}
+
+    /* Toast */
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 20px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:200}
+    .toast.show{opacity:1}
+
+    .sending{opacity:.6;pointer-events:none}
+    .status-send{font-size:11px;color:#888}
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>⚽ Cuotas del equipo</h1>
+  <p class="subtitle">Panel del tesorero</p>
+
+  <!-- Dólar blue -->
+  <div class="dolar-bar">
+    <span style="color:#888">💵 Dólar blue:</span>
+    <span class="dolar-val" id="dolar-val">cargando...</span>
+    <span class="dolar-tag" id="dolar-tag">⏳</span>
+    <span style="color:#bbb;font-size:11px">· dolarapi.com</span>
+    <button class="btn" style="margin-left:auto;padding:4px 10px;font-size:12px" onclick="fetchDolar()">↺ Actualizar</button>
+  </div>
+
+  <!-- Config cuota -->
+  <div class="config-bar">
+    <label>Cuota mensual:</label>
+    <input id="inp-cuota" type="number" value="15000" onchange="render()">
+    <span style="font-size:13px;color:#888">ARS</span>
+    <span id="cuota-usd" style="font-size:13px;color:#2e7d32;margin-left:4px"></span>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat"><div class="stat-n" id="s-total">0</div><div class="stat-l">Miembros</div></div>
+    <div class="stat"><div class="stat-n n-ok" id="s-ok">0</div><div class="stat-l">Al día ✓</div></div>
+    <div class="stat"><div class="stat-n n-bad" id="s-bad">0</div><div class="stat-l">Deben ⚠️</div></div>
+  </div>
+
+  <!-- Agregar miembro -->
+  <div class="add-card">
+    <h2>➕ Agregar miembro</h2>
+    <div class="add-grid">
+      <input id="inp-nombre" placeholder="Nombre completo" onkeydown="if(event.key==='Enter')agregar()">
+      <input id="inp-posicion" placeholder="Posición / Rol" onkeydown="if(event.key==='Enter')agregar()">
+      <input id="inp-tel" placeholder="Teléfono (ej: 5491112345678)" onkeydown="if(event.key==='Enter')agregar()">
+      <button class="btn btn-primary" onclick="agregar()">Agregar</button>
+    </div>
+    <p style="font-size:11px;color:#aaa;margin-top:8px">El teléfono debe incluir código de país sin + (ej: 5491122334455 para Argentina)</p>
+  </div>
+
+  <!-- Acciones masivas -->
+  <div class="bulk-bar">
+    <button class="btn btn-wa" id="btn-masivo" onclick="enviarMasivo()">📲 Avisar a todos los deudores</button>
+    <span class="status-send" id="status-masivo"></span>
+  </div>
+
+  <!-- Filtros -->
+  <div class="filters">
+    <button class="filter-btn active" onclick="setFiltro('todos',this)">Todos</button>
+    <button class="filter-btn" onclick="setFiltro('deuda',this)">⚠️ Deudores</button>
+    <button class="filter-btn" onclick="setFiltro('pago',this)">✓ Al día</button>
+  </div>
+
+  <div class="list" id="lista"></div>
+</div>
+
+<!-- Modal comprobante -->
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <span class="modal-close" onclick="cerrarModal()">✕</span>
+    <h2 id="modal-title">Comprobante</h2>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';  // mismo origen
+let filtro = 'todos';
+let dolarBlue = null;
+let miembros = [];
+
+// ── Dólar ──────────────────────────────────────────────────────
+async function fetchDolar() {
+  try {
+    const res = await fetch('https://dolarapi.com/v1/dolares/blue');
+    const data = await res.json();
+    dolarBlue = parseFloat(data.venta);
+    document.getElementById('dolar-val').textContent = '$' + dolarBlue.toLocaleString('es-AR');
+    document.getElementById('dolar-tag').textContent = '✓ actualizado';
+    document.getElementById('dolar-tag').className = 'dolar-tag';
+  } catch {
+    document.getElementById('dolar-tag').textContent = '✗ sin conexión';
+    document.getElementById('dolar-tag').className = 'dolar-tag err';
+  }
+  actualizarCuotaUSD();
+  render();
+}
+
+function actualizarCuotaUSD() {
+  const cuota = getCuota();
+  const el = document.getElementById('cuota-usd');
+  if (dolarBlue) el.textContent = `≈ U$D ${(cuota / dolarBlue).toFixed(2)}`;
+  else el.textContent = '';
+}
+
+function getCuota() {
+  return parseFloat(document.getElementById('inp-cuota').value) || 15000;
+}
+
+// ── Cargar miembros desde backend ──────────────────────────────
+async function cargarMiembros() {
+  try {
+    const res = await fetch(`${API}/api/miembros`);
+    miembros = await res.json();
+    render();
+  } catch {
+    toast('No se pudo conectar al servidor');
+  }
+}
+
+// ── Agregar ────────────────────────────────────────────────────
+async function agregar() {
+  const nombre   = document.getElementById('inp-nombre').value.trim();
+  const posicion = document.getElementById('inp-posicion').value.trim();
+  const telefono = document.getElementById('inp-tel').value.trim();
+  if (!nombre || !telefono) { toast('Completá nombre y teléfono'); return; }
+
+  try {
+    const res = await fetch(`${API}/api/miembros`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, posicion, telefono })
+    });
+    if (!res.ok) throw new Error();
+    const m = await res.json();
+    miembros.push(m);
+    document.getElementById('inp-nombre').value = '';
+    document.getElementById('inp-posicion').value = '';
+    document.getElementById('inp-tel').value = '';
+    render();
+    toast(`${nombre} agregado ✓`);
+  } catch {
+    toast('Error al agregar miembro');
+  }
+}
+
+// ── Eliminar ───────────────────────────────────────────────────
+async function eliminar(id) {
+  if (!confirm('¿Eliminar este miembro?')) return;
+  try {
+    await fetch(`${API}/api/miembros/${id}`, { method: 'DELETE' });
+    miembros = miembros.filter(m => m.id !== id);
+    render();
+    toast('Miembro eliminado');
+  } catch {
+    toast('Error al eliminar');
+  }
+}
+
+// ── Toggle pago manual ─────────────────────────────────────────
+async function togglePago(id) {
+  const m = miembros.find(x => x.id === id);
+  if (!m) return;
+  const nuevoPago = !m.pagado;
+  try {
+    const res = await fetch(`${API}/api/miembros/${id}/pago`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pagado: nuevoPago })
+    });
+    const updated = await res.json();
+    Object.assign(m, updated);
+    render();
+    toast(nuevoPago ? '✓ Marcado como pagado' : 'Marcado como deudor');
+  } catch {
+    toast('Error al actualizar');
+  }
+}
+
+// ── Recordatorio individual ────────────────────────────────────
+async function enviarRecordatorio(id) {
+  const m = miembros.find(x => x.id === id);
+  if (!m) return;
+  const btn = document.getElementById(`btn-rec-${id}`);
+  if (btn) btn.classList.add('sending');
+  try {
+    const res = await fetch(`${API}/api/recordatorio/${id}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    toast(`📲 Recordatorio enviado a ${m.nombre}`);
+  } catch (err) {
+    toast(`Error: ${err.message}`);
+  } finally {
+    if (btn) btn.classList.remove('sending');
+  }
+}
+
+// ── Recordatorio masivo ────────────────────────────────────────
+async function enviarMasivo() {
+  const deudores = miembros.filter(m => !m.pagado);
+  if (!deudores.length) { toast('No hay deudores'); return; }
+  if (!confirm(`¿Mandar recordatorio a ${deudores.length} deudores?`)) return;
+
+  const btn = document.getElementById('btn-masivo');
+  const status = document.getElementById('status-masivo');
+  btn.classList.add('sending');
+  status.textContent = 'Enviando...';
+
+  try {
+    const res = await fetch(`${API}/api/recordatorio-masivo`, { method: 'POST' });
+    const data = await res.json();
+    toast(`📲 Enviado a ${data.enviados} de ${deudores.length} deudores`);
+    status.textContent = `Último envío: ${new Date().toLocaleTimeString('es-AR')}`;
+  } catch {
+    toast('Error al enviar mensajes');
+    status.textContent = '';
+  } finally {
+    btn.classList.remove('sending');
+  }
+}
+
+// ── Ver comprobante ────────────────────────────────────────────
+async function verComprobante(id) {
+  const m = miembros.find(x => x.id === id);
+  if (!m || !m.comprobanteUrl) { toast('Sin comprobante'); return; }
+
+  document.getElementById('modal-title').textContent = `Comprobante — ${m.nombre}`;
+  const content = document.getElementById('modal-content');
+  if (m.comprobanteUrl.endsWith('.pdf')) {
+    content.innerHTML = `<p style="margin-bottom:12px;font-size:13px;color:#666">Archivo PDF:</p>
+      <a href="${m.comprobanteUrl}" target="_blank" class="btn btn-primary" style="display:inline-flex">📄 Abrir PDF</a>`;
+  } else {
+    content.innerHTML = `<img src="${m.comprobanteUrl}" alt="Comprobante">
+      <p style="font-size:11px;color:#aaa;margin-top:8px;text-align:center">
+        Pagado: ${m.pagadoEn ? new Date(m.pagadoEn).toLocaleString('es-AR') : '—'}
+      </p>`;
+  }
+  document.getElementById('modal').classList.add('open');
+}
+
+function cerrarModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) cerrarModal();
+});
+
+// ── Render ─────────────────────────────────────────────────────
+function setFiltro(f, btn) {
+  filtro = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+function initials(nombre) {
+  return nombre.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function render() {
+  actualizarCuotaUSD();
+  const cuota = getCuota();
+  const total = miembros.length;
+  const ok    = miembros.filter(m => m.pagado).length;
+  const bad   = total - ok;
+  document.getElementById('s-total').textContent = total;
+  document.getElementById('s-ok').textContent    = ok;
+  document.getElementById('s-bad').textContent   = bad;
+
+  const vis = miembros.filter(m =>
+    filtro === 'todos' ||
+    (filtro === 'pago'  &&  m.pagado) ||
+    (filtro === 'deuda' && !m.pagado)
+  );
+
+  const lista = document.getElementById('lista');
+  if (!vis.length) {
+    lista.innerHTML = '<div class="empty">No hay miembros en esta categoría</div>';
+    return;
+  }
+
+  const usdStr = m => dolarBlue && !m.pagado
+    ? ` · U$D ${(cuota / dolarBlue).toFixed(2)}`
+    : '';
+
+  lista.innerHTML = vis.map(m => `
+    <div class="member ${m.pagado ? 'pago' : 'deuda'}">
+      <div class="avatar ${m.pagado ? 'av-ok' : 'av-bad'}">${initials(m.nombre)}</div>
+      <div class="info">
+        <div class="name">${m.nombre}</div>
+        <div class="meta">
+          ${m.posicion}
+          ${!m.pagado ? ` · $${cuota.toLocaleString('es-AR')}${usdStr(m)}` : ''}
+          ${m.pagadoEn ? ` · Pagó ${new Date(m.pagadoEn).toLocaleDateString('es-AR')}` : ''}
+        </div>
+      </div>
+      <span class="badge ${m.pagado ? 'badge-ok' : 'badge-bad'}">${m.pagado ? 'Al día' : 'Debe'}</span>
+      <div class="actions">
+        ${m.comprobanteUrl ? `<button class="icon-btn" onclick="verComprobante(${m.id})" title="Ver comprobante">📎</button>` : ''}
+        ${!m.pagado ? `<button class="icon-btn" id="btn-rec-${m.id}" onclick="enviarRecordatorio(${m.id})" title="Mandar recordatorio WhatsApp">📲</button>` : ''}
+        <button class="icon-btn" onclick="togglePago(${m.id})" title="${m.pagado ? 'Marcar como deudor' : 'Marcar como pagado'}">${m.pagado ? '↩' : '✓'}</button>
+        <button class="icon-btn" onclick="eliminar(${m.id})" title="Eliminar">🗑</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Toast ──────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── Init ───────────────────────────────────────────────────────
+fetchDolar();
+cargarMiembros();
+
+// Refrescar miembros cada 30 segundos (por si alguien pagó)
+setInterval(cargarMiembros, 30000);
+</script>
+</body>
+</html>
