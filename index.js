@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
+const cron = require('node-cron');
 
 const app = express();
 app.use(cors());
@@ -493,4 +494,55 @@ app.post('/api/comprobante/:token', upload.single('comprobante'), async (req, re
 const PORT = process.env.PORT || 3000;
 initDB().then(() => {
   app.listen(PORT, () => console.log('Servidor en puerto ' + PORT));
+});
+
+// ── Recordatorio automático ──────────────────────────────────────────────────
+
+async function enviarRecordatorioAutomatico() {
+  console.log('[CRON] Iniciando envío automático — ' + new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }));
+  try {
+    const result = await pool.query('SELECT * FROM miembros WHERE pagado=false ORDER BY nombre');
+    const deudores = result.rows;
+    if (!deudores.length) {
+      console.log('[CRON] Sin deudores, no se envía nada.');
+      return;
+    }
+    console.log('[CRON] Deudores encontrados: ' + deudores.length);
+    let enviados = 0;
+    for (const m of deudores) {
+      const linkPago = BASE_URL + '/pagar/' + m.token;
+      const mensaje =
+        '⚽ *¡Recordatorio de cuota — Abogados B!*\n\n' +
+        'Hola *' + m.nombre + '*, todavía tenés pendiente la cuota mensual por *$' + CUOTA_ARS.toLocaleString('es-AR') + ' ARS*.\n\n' +
+        '💳 *Datos para transferir:*\n' +
+        'Alias: *abogadosbv.mp*\n' +
+        'A nombre de: Agustín "Mafiolo" Romano\n\n' +
+        '📎 Una vez pagado, subí el comprobante acá:\n' + linkPago + '\n\n' +
+        '¡Gracias y nos vemos en la cancha! 🏆';
+      try {
+        await client.messages.create({ from: TWILIO_FROM, to: 'whatsapp:+' + m.telefono, body: mensaje });
+        console.log('[CRON] ✓ Enviado a ' + m.nombre + ' (' + m.telefono + ')');
+        enviados++;
+      } catch (err) {
+        console.error('[CRON] ✗ Error enviando a ' + m.nombre + ':', err.message);
+      }
+      await new Promise(r => setTimeout(r, 400));
+    }
+    console.log('[CRON] Finalizado. Enviados: ' + enviados + '/' + deudores.length);
+  } catch (err) {
+    console.error('[CRON] Error general:', err.message);
+  }
+}
+
+// Miércoles (3) y sábados (6) a las 12:00hs hora Argentina
+cron.schedule('0 12 * * 3,6', enviarRecordatorioAutomatico, {
+  timezone: 'America/Argentina/Buenos_Aires'
+});
+console.log('[CRON] Programado: miércoles y sábados a las 12:00hs (ARG)');
+
+// Endpoint para probar el cron manualmente sin esperar
+app.post('/api/cron/test', async (req, res) => {
+  console.log('[CRON] Disparo manual desde /api/cron/test');
+  enviarRecordatorioAutomatico();
+  res.json({ ok: true, mensaje: 'Recordatorio automático iniciado. Revisá la consola para el resultado.' });
 });
